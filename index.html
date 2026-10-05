@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wastewater Alkalinity & CDR Siting Index</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <style>
+        body { background-color: #0f172a; color: #e2e8f0; margin: 0; }
+        #map { height: 100vh; width: 100%; z-index: 1; }
+        .custom-popup .leaflet-popup-content-wrapper { 
+            background-color: #1e293b; 
+            color: #f8fafc; 
+            border-radius: 0.5rem; 
+            border: 1px solid #334155; 
+        }
+        .custom-popup .leaflet-popup-tip { background-color: #1e293b; }
+    </style>
+</head>
+<body class="flex flex-col md:flex-row h-screen overflow-hidden">
+
+    <!-- Sidebar / Analytics Panel -->
+    <aside class="w-full md:w-1/3 bg-slate-900 border-r border-slate-800 p-6 overflow-y-auto z-10 shadow-2xl">
+        <header class="mb-6">
+            <span class="inline-block px-2.5 py-0.5 rounded text-xs font-semibold bg-cyan-950 text-cyan-400 border border-cyan-800 mb-2">
+                Spatial Decision Support
+            </span>
+            <h1 class="text-2xl font-bold tracking-tight text-white">Alkaline CDR Siting Index</h1>
+            <h2 class="text-xs uppercase tracking-wider text-slate-400 mt-1">California Municipal WWTP & Mineral Logistics Optimization</h2>
+        </header>
+        
+        <section class="text-sm text-slate-300 leading-relaxed mb-6 space-y-3">
+            <p>
+                A spatial analysis pipeline evaluating wastewater alkalinity enhancement (WAE) deployment viability across California.
+            </p>
+            <p>
+                The model correlates municipal discharge volumes (NPDES flow data) with active alkaline mineral extraction sources (USGS MRDS) to prioritize sites balancing high sequestration capacity against mineral haul emissions.
+            </p>
+        </section>
+
+        <!-- Metric Cards -->
+        <div class="grid grid-cols-2 gap-3 mb-6">
+            <div class="bg-slate-800/80 p-3 rounded-lg border border-slate-700">
+                <span class="text-xs text-slate-400">Model Baseline</span>
+                <p class="text-lg font-bold text-cyan-400">100 mg/L</p>
+                <span class="text-[11px] text-slate-500">CaCO₃ Equiv. Dose</span>
+            </div>
+            <div class="bg-slate-800/80 p-3 rounded-lg border border-slate-700">
+                <span class="text-xs text-slate-400">Yield Multiplier</span>
+                <p class="text-lg font-bold text-cyan-400">60 t / MGD</p>
+                <span class="text-[11px] text-slate-500">Net CO₂ / Year</span>
+            </div>
+        </div>
+
+        <!-- Target Facilities List -->
+        <section>
+            <h3 class="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-3 border-b border-slate-800 pb-2">
+                High-Viability Deployment Candidates
+            </h3>
+            <div id="leaderboard" class="space-y-2.5">
+                <!-- Dynamically populated -->
+            </div>
+        </section>
+    </aside>
+
+    <!-- Map Canvas -->
+    <main class="w-full md:w-2/3 relative h-full">
+        <div id="map"></div>
+    </main>
+
+    <script>
+        const map = L.map('map').setView([36.7783, -119.4179], 6);
+
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+            attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ',
+            maxZoom: 16
+        }).addTo(map);
+
+        fetch('ca_wwtp_cdr_viability.geojson')
+            .then(res => res.json())
+            .then(data => {
+                L.geoJSON(data, {
+                    pointToLayer: function (feature, latlng) {
+                        const radiusSize = Math.max(feature.properties.Flow_MGD / 12, 5);
+                        return L.circleMarker(latlng, {
+                            radius: radiusSize,
+                            fillColor: "#22d3ee",
+                            color: "#0891b2",
+                            weight: 1.5,
+                            opacity: 1,
+                            fillOpacity: 0.6
+                        }).bindPopup(`
+                            <div class="text-xs space-y-1">
+                                <div class="font-bold text-cyan-400 text-sm mb-1">${feature.properties.Facility_Name || 'Facility'}</div>
+                                <div><span class="text-slate-400">Design Flow:</span> <span class="font-mono">${feature.properties.Flow_MGD} MGD</span></div>
+                                <div><span class="text-slate-400">Est. CO₂ Uptake:</span> <span class="font-mono">${feature.properties.Annual_CO2_Removal_Tons.toLocaleString()} t/yr</span></div>
+                                <div><span class="text-slate-400">Nearest Feedstock:</span> <span class="font-mono">${feature.properties.Miles_to_Nearest_Quarry.toFixed(1)} mi</span></div>
+                            </div>
+                        `, { className: 'custom-popup' });
+                    }
+                }).addTo(map);
+
+                // Viability Score: Flow capacity penalized by transport distance
+                const ranked = data.features.sort((a, b) => {
+                    const scoreA = a.properties.Flow_MGD / Math.sqrt(Math.max(a.properties.Miles_to_Nearest_Quarry, 1));
+                    const scoreB = b.properties.Flow_MGD / Math.sqrt(Math.max(b.properties.Miles_to_Nearest_Quarry, 1));
+                    return scoreB - scoreA;
+                }).slice(0, 5);
+
+                const container = document.getElementById('leaderboard');
+                ranked.forEach((item, idx) => {
+                    container.innerHTML += `
+                        <div class="bg-slate-800/60 p-3 rounded border border-slate-700/80 hover:border-cyan-500/50 transition-colors">
+                            <div class="flex justify-between items-center mb-1">
+                                <span class="font-semibold text-sm text-cyan-300">#${idx + 1} ${item.properties.Facility_Name || 'Facility'}</span>
+                                <span class="text-xs font-mono text-slate-400">${item.properties.Flow_MGD} MGD</span>
+                            </div>
+                            <div class="flex justify-between text-xs text-slate-400">
+                                <span>${item.properties.Annual_CO2_Removal_Tons.toLocaleString()} t CO₂/yr</span>
+                                <span>${item.properties.Miles_to_Nearest_Quarry.toFixed(1)} mi to mineral source</span>
+                            </div>
+                        </div>
+                    `;
+                });
+            })
+            .catch(err => {
+                console.error("GeoJSON load failed:", err);
+            });
+    </script>
+</body>
+</html>
