@@ -25,13 +25,19 @@ The pipeline integrates public environmental and geological datasets to generate
 * **Deployment:** GitHub Pages (Serverless)
 
 ## Repository Structure
-* `ca_wwtp_cdr_viability.geojson` - The fully processed spatial artifact containing combined facility flow rates, CO2 yields, and distance-to-feedstock calculations.
-* `index.html` - The static frontend web application that ingests the GeoJSON and renders the interactive map and dynamic leaderboard.
+This repository separates the backend data engineering logic from the frontend web deployment:
 
-## Local Development
-To run this dashboard locally, simply clone the repository and serve the directory using a lightweight web server to bypass CORS restrictions:
+* `data/` - Contains the mock EPA and USGS CSV datasets used for pipeline execution.
+* `src/spatial_ops.py` - The production-grade, object-oriented Python module handling CRS projections and vectorized spatial joins.
+* `notebooks/` 
+  * `01_exploratory_pipeline.ipynb` - Initial data wrangling, EDA, and logic formulation.
+  * `02_production_execution.ipynb` - Clean execution notebook orchestrating the `spatial_ops` module.
+* `ca_wwtp_cdr_viability.geojson` - The fully processed spatial artifact exported by the pipeline.
+* `index.html` - The static frontend web application that ingests the GeoJSON and renders the interactive map.
 
+## Pipeline Execution
+To run the spatial data pipeline locally:
 ```bash
 git clone [https://github.com/kothawadegs/wastewater-cdr-optimizer.git](https://github.com/kothawadegs/wastewater-cdr-optimizer.git)
 cd wastewater-cdr-optimizer
-python -m http.server 8000
+pip install pandas geopandas shapely
