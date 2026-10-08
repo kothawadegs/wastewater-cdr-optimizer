@@ -70,7 +70,7 @@
         <div id="map"></div>
     </main>
 
-    <script>
+<script>
         const map = L.map('map').setView([36.7783, -119.4179], 6);
 
         L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
@@ -83,7 +83,8 @@
             .then(data => {
                 L.geoJSON(data, {
                     pointToLayer: function (feature, latlng) {
-                        const radiusSize = Math.max(feature.properties.Flow_MGD / 12, 5);
+                        // Updated to flow_mgd
+                        const radiusSize = Math.max(feature.properties.flow_mgd / 12, 5);
                         return L.circleMarker(latlng, {
                             radius: radiusSize,
                             fillColor: "#22d3ee",
@@ -93,10 +94,10 @@
                             fillOpacity: 0.6
                         }).bindPopup(`
                             <div class="text-xs space-y-1">
-                                <div class="font-bold text-cyan-400 text-sm mb-1">${feature.properties.Facility_Name || 'Facility'}</div>
-                                <div><span class="text-slate-400">Design Flow:</span> <span class="font-mono">${feature.properties.Flow_MGD} MGD</span></div>
-                                <div><span class="text-slate-400">Est. CO₂ Uptake:</span> <span class="font-mono">${feature.properties.Annual_CO2_Removal_Tons.toLocaleString()} t/yr</span></div>
-                                <div><span class="text-slate-400">Nearest Feedstock:</span> <span class="font-mono">${feature.properties.Miles_to_Nearest_Quarry.toFixed(1)} mi</span></div>
+                                <div class="font-bold text-cyan-400 text-sm mb-1">${feature.properties.facility_name || 'Facility'}</div>
+                                <div><span class="text-slate-400">Design Flow:</span> <span class="font-mono">${feature.properties.flow_mgd} MGD</span></div>
+                                <div><span class="text-slate-400">Est. CO₂ Uptake:</span> <span class="font-mono">${feature.properties.est_co2_t_yr.toLocaleString()} t/yr</span></div>
+                                <div><span class="text-slate-400">Nearest Feedstock:</span> <span class="font-mono">${feature.properties.haul_distance_miles.toFixed(1)} mi</span></div>
                             </div>
                         `, { className: 'custom-popup' });
                     }
@@ -104,8 +105,8 @@
 
                 // Viability Score: Flow capacity penalized by transport distance
                 const ranked = data.features.sort((a, b) => {
-                    const scoreA = a.properties.Flow_MGD / Math.sqrt(Math.max(a.properties.Miles_to_Nearest_Quarry, 1));
-                    const scoreB = b.properties.Flow_MGD / Math.sqrt(Math.max(b.properties.Miles_to_Nearest_Quarry, 1));
+                    const scoreA = a.properties.flow_mgd / Math.sqrt(Math.max(a.properties.haul_distance_miles, 1));
+                    const scoreB = b.properties.flow_mgd / Math.sqrt(Math.max(b.properties.haul_distance_miles, 1));
                     return scoreB - scoreA;
                 }).slice(0, 5);
 
@@ -114,12 +115,12 @@
                     container.innerHTML += `
                         <div class="bg-slate-800/60 p-3 rounded border border-slate-700/80 hover:border-cyan-500/50 transition-colors">
                             <div class="flex justify-between items-center mb-1">
-                                <span class="font-semibold text-sm text-cyan-300">#${idx + 1} ${item.properties.Facility_Name || 'Facility'}</span>
-                                <span class="text-xs font-mono text-slate-400">${item.properties.Flow_MGD} MGD</span>
+                                <span class="font-semibold text-sm text-cyan-300">#${idx + 1} ${item.properties.facility_name || 'Facility'}</span>
+                                <span class="text-xs font-mono text-slate-400">${item.properties.flow_mgd} MGD</span>
                             </div>
                             <div class="flex justify-between text-xs text-slate-400">
-                                <span>${item.properties.Annual_CO2_Removal_Tons.toLocaleString()} t CO₂/yr</span>
-                                <span>${item.properties.Miles_to_Nearest_Quarry.toFixed(1)} mi to mineral source</span>
+                                <span>${item.properties.est_co2_t_yr.toLocaleString()} t CO₂/yr</span>
+                                <span>${item.properties.haul_distance_miles.toFixed(1)} mi to mineral source</span>
                             </div>
                         </div>
                     `;
