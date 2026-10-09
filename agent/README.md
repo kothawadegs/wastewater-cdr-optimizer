@@ -15,6 +15,8 @@ short_description: Agent for siting wastewater alkalinity CDR in California
 A [smolagents](https://github.com/huggingface/smolagents) tool-calling agent for the
 [wastewater-cdr-optimizer](https://github.com/kothawadegs/wastewater-cdr-optimizer) pipeline.
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kothawadegs/wastewater-cdr-optimizer/blob/main/agent/cdr_agent_colab.ipynb)
+
 ## Tools
 
 | Tool | What it does |
@@ -38,7 +40,13 @@ pip install -r agent/requirements.txt
 HF_TOKEN=hf_xxx python agent/app.py
 ```
 
+## Run in Google Colab
+
+Open [`cdr_agent_colab.ipynb`](https://colab.research.google.com/github/kothawadegs/wastewater-cdr-optimizer/blob/main/agent/cdr_agent_colab.ipynb) in Colab, choose **Runtime → Run all**, paste your token when asked (or store it as a Colab secret named `HF_TOKEN`), then open the `gradio.live` link it prints.
+
 ## Deploy to Hugging Face Spaces
+
+> Gradio Spaces currently require a paid Hugging Face plan; free accounts can only create Static Spaces.
 
 From the repository root:
 

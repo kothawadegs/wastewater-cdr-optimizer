@@ -34,7 +34,14 @@ This repository separates the backend data engineering logic from the frontend w
   * `02_production_execution.ipynb` - Clean execution notebook orchestrating the `spatial_ops` module.
 * `ca_wwtp_cdr_viability.geojson` - The fully processed spatial artifact exported by the pipeline.
 * `index.html` - The static frontend web application that ingests the GeoJSON and renders the interactive map.
-* `agent/` - CDR Siting Copilot, a smolagents tool-calling agent deployable as a Hugging Face Space (see `agent/README.md`).
+* `agent/` - CDR Siting Copilot, a smolagents tool-calling agent (Colab notebook, local run, or Hugging Face Space; see `agent/README.md`).
+* `copilot.js` - Browser version of the Copilot embedded in the live dashboard.
+
+## AI Copilot
+An LLM agent that answers questions about the ranking, finds the nearest limestone source for any coordinates, and computes net CO₂ after Scope 3 trucking emissions. Both versions need a free [Hugging Face token](https://huggingface.co/settings/tokens) with the *Make calls to Inference Providers* permission.
+
+* **On the dashboard:** open the [live dashboard](https://kothawadegs.github.io/wastewater-cdr-optimizer), click **Ask the Copilot**, and paste your token under *Settings*. The token stays in your browser.
+* **In Google Colab:** [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kothawadegs/wastewater-cdr-optimizer/blob/main/agent/cdr_agent_colab.ipynb) Run all cells to get a temporary public chat link.
 
 ## Pipeline Execution
 To run the spatial data pipeline locally:
