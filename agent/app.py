@@ -1,71 +1,167 @@
-import os
-import gradio as gr
-from langchain_core.tools import tool
-from langgraph.prebuilt import create_react_agent
-from langchain_openai import ChatOpenAI # Easily swapped for langchain_huggingface
+"""
+CDR Siting Copilot: a Hugging Face Space agent for the wastewater-cdr-optimizer pipeline.
 
-# 1. Define the TEA (Techno-Economic Analysis) Tool
+The agent (smolagents ToolCallingAgent) answers questions about the California
+WWTP viability ranking produced by `src/spatial_ops.py`, finds the nearest
+limestone feedstock for arbitrary coordinates, and runs a net-CO2 techno-economic
+check that subtracts Scope 3 trucking emissions from gross sequestration.
+
+The LLM runs on Hugging Face Inference Providers, authenticated with the
+`HF_TOKEN` secret of the Space. Override the model with the `MODEL_ID` variable.
+"""
+
+import json
+import math
+import os
+from pathlib import Path
+
+import pandas as pd
+from smolagents import GradioUI, InferenceClientModel, ToolCallingAgent, tool
+
+# --- Data loading -------------------------------------------------------------
+# On the Space the data sits next to app.py; in the GitHub repo it sits one level up.
+HERE = Path(__file__).resolve().parent
+DATA_ROOT = HERE if (HERE / "ca_wwtp_cdr_viability.geojson").exists() else HERE.parent
+
+with open(DATA_ROOT / "ca_wwtp_cdr_viability.geojson") as f:
+    _features = json.load(f)["features"]
+
+FACILITIES = pd.DataFrame(
+    [
+        {
+            "facility_name": p["facility_name"],
+            "flow_mgd": p["flow_mgd"],
+            "latitude": p["Latitude_left"],
+            "longitude": p["Longitude_left"],
+            "nearest_quarry": p["site_name"],
+            "haul_distance_miles": round(p["haul_distance_miles"], 2),
+            "est_co2_t_yr": p["est_co2_t_yr"],
+            "viability_index": round(p["viability_index"], 3),
+        }
+        for p in (feat["properties"] for feat in _features)
+    ]
+).sort_values("viability_index", ascending=False, ignore_index=True)
+FACILITIES.insert(0, "rank", FACILITIES.index + 1)
+
+QUARRIES = pd.read_csv(DATA_ROOT / "data" / "california_usgs_mrds_limestone.csv")
+
+# --- Model constants (mirrors src/spatial_ops.py and the TEA assumptions) ------
+GROSS_CO2_PER_MGD = 60              # t CO2/yr captured per MGD at 100 mg/L CaCO3 dose
+LIMESTONE_PER_MGD = 138             # t/yr rock required per MGD at 100 mg/L dose
+TRUCK_CAPACITY_TONS = 20            # standard dump truck payload
+EMISSION_FACTOR_KG_PER_MILE = 1.45  # kg CO2 per heavy-duty truck mile
+EARTH_RADIUS_MILES = 3958.8
+
+
+def _haversine_miles(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp, dl = p2 - p1, math.radians(lon2 - lon1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * EARTH_RADIUS_MILES * math.asin(math.sqrt(a))
+
+
+# --- Tools --------------------------------------------------------------------
+@tool
+def list_ranked_facilities(top_n: int = 10) -> str:
+    """
+    Returns the California wastewater treatment plants ranked by the pipeline's
+    Viability Index (flow_mgd / (haul_distance_miles + 0.1)), highest first.
+
+    Args:
+        top_n: Maximum number of facilities to return.
+    """
+    return FACILITIES.head(max(1, top_n)).to_string(index=False)
+
+
+@tool
+def get_facility_profile(facility_name: str) -> str:
+    """
+    Looks up one wastewater treatment plant from the viability dataset and returns
+    its flow, coordinates, nearest limestone quarry, haul distance, estimated gross
+    CO2 yield, Viability Index and rank. Matching is case-insensitive and partial.
+
+    Args:
+        facility_name: Full or partial facility name, e.g. "Hyperion" or "San Jose WWTP".
+    """
+    matches = FACILITIES[FACILITIES["facility_name"].str.contains(facility_name, case=False, regex=False)]
+    if matches.empty:
+        known = ", ".join(FACILITIES["facility_name"])
+        return f"No facility matching '{facility_name}'. Known facilities: {known}"
+    return matches.to_string(index=False)
+
+
+@tool
+def find_nearest_quarry(latitude: float, longitude: float) -> str:
+    """
+    Finds the closest limestone quarry (USGS MRDS) to a point and returns its
+    great-circle distance in miles. Use this for sites that are not in the dataset.
+
+    Args:
+        latitude: Latitude of the site in decimal degrees (WGS84).
+        longitude: Longitude of the site in decimal degrees (WGS84).
+    """
+    distances = QUARRIES.apply(
+        lambda q: _haversine_miles(latitude, longitude, q["Latitude"], q["Longitude"]), axis=1
+    )
+    q = QUARRIES.loc[distances.idxmin()]
+    return f"Nearest quarry: {q['site_name']} ({q['Latitude']}, {q['Longitude']}), {distances.min():.2f} miles away"
+
+
 @tool
 def calculate_net_co2(facility_name: str, flow_mgd: float, distance_miles: float) -> str:
     """
-    Calculates the true net CO2 sequestered by a WWTP after subtracting 
-    Scope 3 heavy-duty trucking emissions required to haul the alkaline mineral.
+    Calculates the true net CO2 sequestered by a WWTP after subtracting the
+    Scope 3 heavy-duty trucking emissions required to haul the alkaline mineral
+    (round trip, 20 t trucks, 1.45 kg CO2 per mile).
+
+    Args:
+        facility_name: Name of the facility, used only to label the result.
+        flow_mgd: Average plant flow in million gallons per day (MGD).
+        distance_miles: One-way haul distance from the quarry to the plant in miles.
     """
-    # Chemical & Logistics Constants
-    gross_co2_per_mgd = 60          # tons CO2/yr captured per MGD
-    limestone_needed_per_mgd = 138  # tons/yr rock required to hit 100mg/L dose
-    truck_capacity_tons = 20        # standard dump truck capacity
-    emission_factor_kg_per_mile = 1.45 # kg CO2 per loaded truck mile (EPA standard)
-    
-    # Gross Sequestration Math
-    gross_capture = flow_mgd * gross_co2_per_mgd
-    
-    # Scope 3 Haul Emissions Math
-    annual_limestone_tons = flow_mgd * limestone_needed_per_mgd
-    annual_trips = annual_limestone_tons / truck_capacity_tons
-    total_haul_miles = annual_trips * distance_miles * 2 # Round trip accounting
-    
-    haul_emissions_tons = (total_haul_miles * emission_factor_kg_per_mile) / 1000
+    gross_capture = flow_mgd * GROSS_CO2_PER_MGD
+
+    annual_limestone_tons = flow_mgd * LIMESTONE_PER_MGD
+    annual_trips = annual_limestone_tons / TRUCK_CAPACITY_TONS
+    total_haul_miles = annual_trips * distance_miles * 2
+    haul_emissions_tons = total_haul_miles * EMISSION_FACTOR_KG_PER_MILE / 1000
+
     net_co2 = gross_capture - haul_emissions_tons
-    efficiency = (net_co2 / gross_capture) * 100
-    
+    efficiency = (net_co2 / gross_capture) * 100 if gross_capture else 0.0
+
     return (
         f"Facility: {facility_name}\n"
-        f"Gross CO2 Sequestered: {gross_capture:.1f} t/yr\n"
-        f"Scope 3 Haul Emissions: {haul_emissions_tons:.1f} t/yr (Distance: {distance_miles} mi)\n"
-        f"Net CO2 Yield: {net_co2:.1f} t/yr\n"
-        f"Carbon Efficiency: {efficiency:.1f}%"
+        f"Limestone required: {annual_limestone_tons:,.0f} t/yr ({annual_trips:,.0f} truck trips)\n"
+        f"Gross CO2 sequestered: {gross_capture:,.1f} t/yr\n"
+        f"Scope 3 haul emissions: {haul_emissions_tons:,.1f} t/yr (distance: {distance_miles} mi one-way)\n"
+        f"Net CO2 yield: {net_co2:,.1f} t/yr\n"
+        f"Carbon efficiency: {efficiency:.1f}%"
     )
 
-# 2. Initialize the LLM and Compile the LangGraph Agent
-# For Hugging Face, you can use HuggingFaceEndpoint or an inference API key
-llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.1) 
-tools = [calculate_net_co2]
 
-# Compiles the state graph with a system prompt setting the CREW engineer persona
-system_prompt = (
-    "You are a Techno-Economic Analysis Copilot for CREW Carbon. "
-    "Use the calculate_net_co2 tool to evaluate the net-negative viability of wastewater facilities. "
-    "Always present the final net CO2 yield clearly to the deployment engineers."
+# --- Agent --------------------------------------------------------------------
+INSTRUCTIONS = (
+    "You are the CDR Siting Copilot, a techno-economic analysis assistant for "
+    "Wastewater Alkalinity Enhancement (WAE) in California. Ground every answer in "
+    "the tools: use list_ranked_facilities and get_facility_profile for plants in "
+    "the dataset, find_nearest_quarry for new coordinates, and calculate_net_co2 "
+    "to report net-negative viability. Always state the net CO2 yield and carbon "
+    "efficiency clearly, and note that the dataset is a demonstration sample."
 )
-agent_executor = create_react_agent(llm, tools, state_modifier=system_prompt)
 
-# 3. Gradio Interface for Hugging Face Deployment
-def chat_with_crew_agent(message, history):
-    """Parses Gradio inputs into the LangGraph state and returns the AI message."""
-    response = agent_executor.invoke({"messages": [("user", message)]})
-    return response["messages"][-1].content
+model_kwargs = {"token": os.getenv("HF_TOKEN")}
+if os.getenv("MODEL_ID"):
+    model_kwargs["model_id"] = os.environ["MODEL_ID"]
+model = InferenceClientModel(**model_kwargs)
 
-# 4. Launch the UI
-demo = gr.ChatInterface(
-    fn=chat_with_crew_agent,
-    title="CREW Carbon: Logistics & TEA Agent",
-    description="Ask the agent to evaluate the net-negative CO2 yield of a target facility based on flow and haul distance.",
-    examples=[
-        "Calculate the net yield for Hyperion LA with 260 MGD and a quarry 84 miles away.",
-        "San Jose WWTP flows at 110 MGD and the Permanente quarry is 12 miles away. What is the efficiency?"
-    ]
+agent = ToolCallingAgent(
+    tools=[list_ranked_facilities, get_facility_profile, find_nearest_quarry, calculate_net_co2],
+    model=model,
+    instructions=INSTRUCTIONS,
+    max_steps=8,
+    name="cdr_siting_copilot",
+    description="Ranks California WWTPs for alkaline CDR and computes net CO2 after haul emissions.",
 )
 
 if __name__ == "__main__":
-    demo.launch()
+    GradioUI(agent).launch(share=False)
