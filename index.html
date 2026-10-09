@@ -130,5 +130,63 @@
                 console.error("GeoJSON load failed:", err);
             });
     </script>
+
+    <!-- CDR Siting Copilot (browser agent; see copilot.js) -->
+    <button id="copilot-toggle" type="button"
+        class="fixed bottom-5 right-5 z-[1000] flex items-center gap-2 rounded-full bg-cyan-500 px-4 py-3 text-sm font-semibold text-slate-950 shadow-xl hover:bg-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-300">
+        <span aria-hidden="true">💬</span> Ask the Copilot
+    </button>
+
+    <section id="copilot-panel"
+        class="hidden fixed bottom-20 right-4 left-4 sm:left-auto z-[1000] flex flex-col sm:w-[26rem] max-h-[75vh] rounded-xl border border-slate-700 bg-slate-900/95 shadow-2xl backdrop-blur">
+        <header class="flex items-start justify-between border-b border-slate-800 px-4 py-3">
+            <div>
+                <h3 class="text-sm font-semibold text-white">CDR Siting Copilot</h3>
+                <p class="text-[11px] text-slate-400">AI agent over this dataset · runs on Hugging Face models</p>
+            </div>
+            <button id="copilot-close" type="button" class="text-slate-400 hover:text-white text-lg leading-none" aria-label="Close">×</button>
+        </header>
+
+        <details id="copilot-settings" class="border-b border-slate-800 px-4 py-2 text-xs text-slate-300">
+            <summary class="cursor-pointer select-none text-slate-400">Settings: Hugging Face token &amp; model</summary>
+            <div class="mt-2 space-y-2">
+                <label class="block">
+                    <span class="text-slate-400">Your Hugging Face token (needs “Make calls to Inference Providers”)</span>
+                    <input id="copilot-token" type="password" autocomplete="off" placeholder="hf_…"
+                        class="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-2 py-1.5 font-mono text-slate-100 focus:border-cyan-500 focus:outline-none">
+                </label>
+                <label class="flex items-center gap-2">
+                    <input id="copilot-remember" type="checkbox" class="accent-cyan-500"> Remember on this device
+                </label>
+                <label class="block">
+                    <span class="text-slate-400">Model</span>
+                    <input id="copilot-model" type="text"
+                        class="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-2 py-1.5 font-mono text-slate-100 focus:border-cyan-500 focus:outline-none">
+                </label>
+                <p class="text-[11px] text-slate-500">
+                    Your token stays in your browser and is sent only to Hugging Face.
+                    Get one at <a class="text-cyan-400 underline" href="https://huggingface.co/settings/tokens" target="_blank" rel="noopener">huggingface.co/settings/tokens</a>.
+                </p>
+            </div>
+        </details>
+
+        <div id="copilot-log" class="flex flex-1 flex-col gap-2 overflow-y-auto px-4 py-3">
+            <p class="text-xs text-slate-400">Try a question:</p>
+            <button type="button" data-copilot-example class="self-start rounded border border-slate-700 px-2 py-1 text-left text-xs text-cyan-300 hover:border-cyan-500">
+                Which facility ranks best and what is its net CO₂ yield?
+            </button>
+            <button type="button" data-copilot-example class="self-start rounded border border-slate-700 px-2 py-1 text-left text-xs text-cyan-300 hover:border-cyan-500">
+                Find the nearest quarry to 34.05, -118.25 and evaluate a 50 MGD plant there.
+            </button>
+        </div>
+
+        <form id="copilot-form" class="flex gap-2 border-t border-slate-800 p-3">
+            <input id="copilot-input" type="text" placeholder="Ask about a facility or site…" autocomplete="off"
+                class="min-w-0 flex-1 rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-cyan-500 focus:outline-none">
+            <button type="submit" class="rounded bg-cyan-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-400 disabled:opacity-50">Send</button>
+        </form>
+    </section>
+
+    <script src="copilot.js"></script>
 </body>
 </html>
