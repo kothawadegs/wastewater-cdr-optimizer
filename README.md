@@ -34,6 +34,7 @@ This repository separates the backend data engineering logic from the frontend w
   * `02_production_execution.ipynb` - Clean execution notebook orchestrating the `spatial_ops` module.
 * `ca_wwtp_cdr_viability.geojson` - The fully processed spatial artifact exported by the pipeline.
 * `index.html` - The static frontend web application that ingests the GeoJSON and renders the interactive map.
+* `agent/` - CDR Siting Copilot, a smolagents tool-calling agent deployable as a Hugging Face Space (see `agent/README.md`).
 
 ## Pipeline Execution
 To run the spatial data pipeline locally:

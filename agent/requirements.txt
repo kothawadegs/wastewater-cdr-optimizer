@@ -1,4 +1,2 @@
-gradio==4.19.2
-langgraph
-langchain-openai
-langchain-core
+smolagents[gradio]==1.26.0
+pandas
